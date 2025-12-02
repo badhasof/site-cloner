@@ -1,0 +1,59 @@
+{
+  "name": "site-cloner",
+  "version": "1.0.0",
+  "description": "Clone and reconstruct websites as clean React + Tailwind projects",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "site-cloner": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "test": "tsx src/generator/test.ts",
+    "test:example": "tsx src/generator/example.ts",
+    "scrape": "tsx examples/scraper-example.ts",
+    "scrape:example": "tsx examples/scraper-example.ts https://example.com"
+  },
+  "keywords": [
+    "web-scraper",
+    "deobfuscator",
+    "react",
+    "tailwind"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/generator": "^7.28.5",
+    "@babel/parser": "^7.28.5",
+    "@babel/template": "^7.27.2",
+    "@babel/traverse": "^7.28.5",
+    "@babel/types": "^7.28.5",
+    "babel-plugin-transform-react-createelement-to-jsx": "^1.0.5",
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "css-to-tailwindcss": "^1.0.0",
+    "css-tree": "^2.3.1",
+    "fs-extra": "^11.2.0",
+    "js-deobfuscator": "^1.0.0",
+    "ora": "^8.0.1",
+    "playwright": "^1.40.1",
+    "postcss": "^8.4.32",
+    "prettier": "^3.7.3",
+    "webcrack": "^2.14.1"
+  },
+  "devDependencies": {
+    "@types/babel__core": "^7.20.5",
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__template": "^7.4.4",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.10.6",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
