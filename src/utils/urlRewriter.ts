@@ -15,9 +15,12 @@ export class URLMapper {
 
     // Build mapping from original URLs to local paths
     for (const asset of assets) {
-      if (asset.localPath) {
-        // Convert absolute local path to relative public path
-        // e.g., /tmp/site-cloner/images/logo.png -> /assets/images/logo.png
+      if (asset.relativePath) {
+        // Use relativePath directly for URL rewriting
+        // e.g., "images/logo.png" -> "/assets/images/logo.png"
+        this.urlMap.set(asset.url, `/assets/${asset.relativePath}`);
+      } else if (asset.localPath) {
+        // Fallback: Convert absolute local path to relative public path
         const publicPath = this.toPublicPath(asset.localPath, asset.type);
         this.urlMap.set(asset.url, publicPath);
       }

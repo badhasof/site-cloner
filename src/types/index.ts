@@ -165,7 +165,8 @@ export interface ReconstructorConfig {
 export interface Asset {
   url: string;
   type: 'image' | 'font' | 'video' | 'svg' | 'icon' | 'other';
-  localPath?: string;
+  localPath?: string;      // Absolute path to downloaded file in temp dir
+  relativePath?: string;   // Relative path for URL rewriting (e.g., "images/logo.png")
   size?: number;
   mimeType?: string;
   dimensions?: { width: number; height: number };
