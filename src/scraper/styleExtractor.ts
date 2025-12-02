@@ -156,7 +156,11 @@ async function extractComputedStyles(page: Page): Promise<ExtractedStyles | null
           if (element.className && typeof element.className === 'string') {
             const classes = element.className.trim().split(/\s+/).filter(Boolean);
             if (classes.length > 0) {
-              selector += '.' + classes.join('.');
+              // Escape special characters in class names for CSS selectors
+              const escapedClasses = classes.map(c =>
+                c.replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:')
+              );
+              selector += '.' + escapedClasses.join('.');
             }
           }
 

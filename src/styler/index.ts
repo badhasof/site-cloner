@@ -14,6 +14,7 @@ import {
   StyleProcessingOptions,
 } from './types.js';
 import { ExtractedStyles, ProcessedStyles } from '../types/index.js';
+import { URLMapper } from '../utils/urlRewriter.js';
 
 /**
  * Convert CSS declarations to a properties object
@@ -116,7 +117,7 @@ function generateKeyframesCSS(
 /**
  * Generate custom CSS for rules that couldn't be converted to Tailwind
  */
-function generateCustomCSS(parsedCSS: ParsedCSS): string {
+function generateCustomCSS(parsedCSS: ParsedCSS, urlMapper?: URLMapper): string {
   let customCSS = '';
 
   // Add font-face rules
@@ -125,7 +126,9 @@ function generateCustomCSS(parsedCSS: ParsedCSS): string {
       customCSS += `@font-face {\n`;
       customCSS += `  font-family: '${fontFace.fontFamily}';\n`;
       fontFace.src.forEach(src => {
-        customCSS += `  src: ${src};\n`;
+        // Rewrite URLs in font-face src if urlMapper provided
+        const rewrittenSrc = urlMapper ? urlMapper.rewriteCSSUrls(src) : src;
+        customCSS += `  src: ${rewrittenSrc};\n`;
       });
       if (fontFace.fontWeight) {
         customCSS += `  font-weight: ${fontFace.fontWeight};\n`;
@@ -274,7 +277,8 @@ function processRules(
  */
 export async function processStyles(
   styles: ExtractedStyles[],
-  options?: StyleProcessingOptions
+  options?: StyleProcessingOptions,
+  urlMapper?: URLMapper
 ): Promise<ProcessedStyles> {
   const parsedCSSArray: ParsedCSS[] = [];
 
@@ -288,7 +292,7 @@ export async function processStyles(
   const config = generateTailwindConfig(mergedCSS);
   const classMap = processRules(mergedCSS);
   const animations = convertKeyframesToAnimations(mergedCSS);
-  const customCSS = generateCustomCSS(mergedCSS);
+  const customCSS = generateCustomCSS(mergedCSS, urlMapper);
 
   const tailwindClasses: string[] = [];
   classMap.forEach(classes => {

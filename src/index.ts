@@ -155,17 +155,21 @@ export async function cloneSite(
       log(chalk.yellow(`⚠ Component reconstruction failed`));
     }
 
-    // Step 6: Process styles
+    // Step 6: Process styles (with URL rewriting)
     log(chalk.gray('\n[6/7] Processing styles...'));
     const stylesSpinner = verbose ? null : ora('Converting CSS to Tailwind...').start();
 
     let processedStyles: ProcessedStyles | null = null;
     try {
       if (scrapeResult.styles.length > 0) {
-        processedStyles = await processStyles(scrapeResult.styles);
+        // Import URLMapper for CSS URL rewriting
+        const { URLMapper } = await import('./utils/urlRewriter.js');
+        const urlMapper = new URLMapper(scrapeResult.assets);
+
+        processedStyles = await processStyles(scrapeResult.styles, undefined, urlMapper);
 
         stylesSpinner?.succeed(chalk.green('✓ Styles processed'));
-        log(chalk.green('✓ CSS converted to Tailwind'));
+        log(chalk.green('✓ CSS converted to Tailwind (with URL rewriting)'));
       } else {
         stylesSpinner?.warn(chalk.yellow('! No styles to process'));
         log(chalk.yellow('⚠ No stylesheets found'));

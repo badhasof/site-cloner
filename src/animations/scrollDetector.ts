@@ -93,7 +93,10 @@ async function getAnimatableElements(page: Page): Promise<string[]> {
       } else if (el.className && typeof el.className === 'string') {
         const classes = el.className.split(' ').filter(c => c.trim());
         if (classes.length > 0) {
-          selector = `${selector}.${classes[0]}`;
+          // Escape special characters in class names for CSS selectors
+          const escapedClass = classes[0]
+            .replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:');
+          selector = `${selector}.${escapedClass}`;
         }
       }
 
@@ -369,7 +372,10 @@ export async function detectIntersectionObserverAnimations(
       } else if (el.className && typeof el.className === 'string') {
         const classes = el.className.split(' ').filter(c => c.trim());
         if (classes.length > 0) {
-          selector = `${selector}.${classes[0]}`;
+          // Escape special characters in class names for CSS selectors
+          const escapedClass = classes[0]
+            .replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:');
+          selector = `${selector}.${escapedClass}`;
         }
       }
 

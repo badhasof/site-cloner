@@ -8,6 +8,7 @@ import type { DetectedComponent, ProcessedStyles, AnimationResult, Asset, Extrac
 import { writeComponents } from './componentWriter.js';
 import { elementToJSX } from '../scraper/htmlExtractor.js';
 import { htmlToJsx } from '../utils/htmlToJsx.js';
+import { URLMapper } from '../utils/urlRewriter.js';
 
 export interface GenerateProjectOptions {
   outputDir: string;
@@ -27,6 +28,10 @@ export async function generateProject(options: GenerateProjectOptions): Promise<
   const { outputDir, components, styles, animations, assets, html, includeAssets = true, extractedHTML } = options;
 
   console.log('[Generator] Starting project generation...');
+
+  // Create URL mapper for asset URL rewriting
+  const urlMapper = new URLMapper(assets);
+  console.log('[Generator] Created URL mapper with', urlMapper.getStats().totalMappings, 'asset mappings');
 
   // Create directory structure
   await createProjectStructure(outputDir);
@@ -52,8 +57,8 @@ export async function generateProject(options: GenerateProjectOptions): Promise<
   // Write components
   await writeComponents(outputDir, components, styles);
 
-  // Write main App.tsx
-  await writeAppComponent(outputDir, components, extractedHTML);
+  // Write main App.tsx with URL rewriting
+  await writeAppComponent(outputDir, components, extractedHTML, urlMapper);
 
   // Write main.tsx entry point
   await writeMainEntry(outputDir);
@@ -221,7 +226,8 @@ async function writePostcssConfig(outputDir: string): Promise<void> {
 async function writeAppComponent(
   outputDir: string,
   components: DetectedComponent[],
-  extractedHTML?: ExtractedHTML
+  extractedHTML?: ExtractedHTML,
+  urlMapper?: URLMapper
 ): Promise<void> {
   const imports = components
     .filter(c => c.isExported)
@@ -248,7 +254,8 @@ async function writeAppComponent(
     // Otherwise, use the extracted HTML content
     console.log('[Generator] No React components found, using extracted HTML content');
     try {
-      const jsxContent = elementToJSX(extractedHTML.structuredContent, 3);
+      // Pass urlMapper to elementToJSX for URL rewriting
+      const jsxContent = elementToJSX(extractedHTML.structuredContent, 3, urlMapper);
       content = jsxContent;
     } catch (error) {
       console.warn('[Generator] Failed to convert extracted HTML, using fallback:', error);
@@ -344,9 +351,86 @@ async function writeAnimationUtilities(outputDir: string, animations: AnimationR
 }
 
 async function copyAssets(outputDir: string, assets: Asset[]): Promise<void> {
-  // Placeholder for asset copying
-  // In a real implementation, this would copy assets from their source to the public directory
-  console.log(`[Generator] Would copy ${assets.length} assets`);
+  console.log(`[Generator] Copying ${assets.length} assets...`);
+
+  const assetsDir = path.join(outputDir, 'public', 'assets');
+  await fs.mkdir(assetsDir, { recursive: true });
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const asset of assets) {
+    try {
+      // Determine destination path
+      let destPath: string;
+
+      if (asset.localPath) {
+        // Asset was already downloaded, copy from temp location
+        const filename = path.basename(asset.localPath);
+        const assetTypeDir = path.join(assetsDir, `${asset.type}s`);
+        await fs.mkdir(assetTypeDir, { recursive: true });
+        destPath = path.join(assetTypeDir, filename);
+
+        // Copy the file
+        await fs.copyFile(asset.localPath, destPath);
+        console.log(`[Generator] Copied: ${filename} (${asset.type})`);
+      } else {
+        // Asset was not downloaded, need to download from URL
+        console.log(`[Generator] Downloading: ${asset.url}`);
+
+        const response = await fetch(asset.url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const buffer = await response.arrayBuffer();
+
+        // Generate filename from URL
+        const urlObj = new URL(asset.url);
+        let filename = path.basename(urlObj.pathname);
+        if (!filename || filename === '/') {
+          const ext = getExtensionForAssetType(asset.type);
+          filename = `asset-${Date.now()}-${successCount}${ext}`;
+        }
+
+        // Sanitize filename
+        filename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+        const assetTypeDir = path.join(assetsDir, `${asset.type}s`);
+        await fs.mkdir(assetTypeDir, { recursive: true });
+        destPath = path.join(assetTypeDir, filename);
+
+        // Write the file
+        await fs.writeFile(destPath, Buffer.from(buffer));
+        console.log(`[Generator] Downloaded: ${filename} (${(buffer.byteLength / 1024).toFixed(2)} KB)`);
+      }
+
+      successCount++;
+    } catch (error) {
+      failCount++;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[Generator] Failed to copy/download asset ${asset.url}: ${errorMsg}`);
+      // Continue with next asset - don't fail the whole operation
+    }
+  }
+
+  console.log(`[Generator] Asset copying complete: ${successCount} succeeded, ${failCount} failed`);
+}
+
+function getExtensionForAssetType(type: Asset['type']): string {
+  switch (type) {
+    case 'image':
+      return '.png';
+    case 'font':
+      return '.woff2';
+    case 'video':
+      return '.mp4';
+    case 'svg':
+    case 'icon':
+      return '.svg';
+    default:
+      return '';
+  }
 }
 
 /**

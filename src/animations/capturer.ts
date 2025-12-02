@@ -207,7 +207,13 @@ function createSelectorFromHTML(html: string): string {
   const classMatch = attrs.match(/class="([^"]+)"/);
   if (classMatch) {
     const classes = classMatch[1].split(' ').filter(c => c.trim());
-    if (classes.length > 0) return `${tag}.${classes.join('.')}`;
+    if (classes.length > 0) {
+      // Escape special characters in class names for CSS selectors
+      const escapedClasses = classes.map(c =>
+        c.replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:')
+      );
+      return `${tag}.${escapedClasses.join('.')}`;
+    }
   }
 
   return tag;
@@ -235,7 +241,11 @@ async function captureWebAnimations(page: Page): Promise<CapturedAnimation[]> {
         } else if (target.className) {
           const classes = target.className.split(' ').filter((c: string) => c.trim());
           if (classes.length > 0) {
-            selector = `${selector}.${classes.join('.')}`;
+            // Escape special characters in class names for CSS selectors
+            const escapedClasses = classes.map((c: string) =>
+              c.replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:')
+            );
+            selector = `${selector}.${escapedClasses.join('.')}`;
           }
         }
 
@@ -303,7 +313,10 @@ async function captureHoverAnimations(page: Page): Promise<CapturedAnimation[]> 
         } else if (el.className && typeof el.className === 'string') {
           const classes = el.className.split(' ').filter(c => c.trim());
           if (classes.length > 0) {
-            selector = `${selector}.${classes[0]}`;
+            // Escape special characters in class names for CSS selectors
+            const escapedClass = classes[0]
+              .replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:');
+            selector = `${selector}.${escapedClass}`;
           }
         }
         selectors.push({ selector, index });
@@ -404,7 +417,10 @@ async function captureClickAnimations(page: Page): Promise<CapturedAnimation[]> 
         } else if (el.className && typeof el.className === 'string') {
           const classes = el.className.split(' ').filter(c => c.trim());
           if (classes.length > 0) {
-            selector = `${selector}.${classes[0]}`;
+            // Escape special characters in class names for CSS selectors
+            const escapedClass = classes[0]
+              .replace(/\./g, '\\.').replace(/\//g, '\\/').replace(/:/g, '\\:');
+            selector = `${selector}.${escapedClass}`;
           }
         }
         selectors.push({ selector, index });

@@ -94,10 +94,14 @@ async function downloadAsset(
 
     console.log(`[AssetDownloader] Saved: ${localPath} (${(buffer.byteLength / 1024).toFixed(2)} KB)`);
 
+    // Store both the absolute local path and the relative public path
+    // The relative path will be used for URL rewriting
+    const relativePath = path.join(`${assetType}s`, filename);
+
     return {
       url,
       type: assetType,
-      localPath,
+      localPath: relativePath,  // Store relative path for URL rewriting
       size: buffer.byteLength,
       mimeType: contentType,
     };
