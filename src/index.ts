@@ -164,7 +164,7 @@ export async function cloneSite(
       if (scrapeResult.styles.length > 0) {
         // Import URLMapper for CSS URL rewriting
         const { URLMapper } = await import('./utils/urlRewriter.js');
-        const urlMapper = new URLMapper(scrapeResult.assets);
+        const urlMapper = new URLMapper(scrapeResult.assets, scrapeResult.url);
 
         processedStyles = await processStyles(scrapeResult.styles, undefined, urlMapper);
 
@@ -255,7 +255,8 @@ export async function cloneSite(
         assets: scrapeResult.assets,
         html: scrapeResult.html,
         includeAssets: options.includeAssets !== false,
-        extractedHTML: scrapeResult.extractedHTML
+        extractedHTML: scrapeResult.extractedHTML,
+        baseUrl: scrapeResult.url // Pass base URL for relative path resolution
       });
 
       genSpinner?.succeed(chalk.green('✓ Project generated'));

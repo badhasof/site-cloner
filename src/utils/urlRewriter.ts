@@ -9,20 +9,32 @@ import { Asset } from '../types/index.js';
  */
 export class URLMapper {
   private urlMap: Map<string, string>;
+  private baseUrl?: string;
+  private pathMap: Map<string, string>; // Map pathname to local path
 
-  constructor(assets: Asset[]) {
+  constructor(assets: Asset[], baseUrl?: string) {
     this.urlMap = new Map();
+    this.pathMap = new Map();
+    this.baseUrl = baseUrl;
 
     // Build mapping from original URLs to local paths
     for (const asset of assets) {
-      if (asset.relativePath) {
-        // Use relativePath directly for URL rewriting
-        // e.g., "images/logo.png" -> "/assets/images/logo.png"
-        this.urlMap.set(asset.url, `/assets/${asset.relativePath}`);
-      } else if (asset.localPath) {
-        // Fallback: Convert absolute local path to relative public path
-        const publicPath = this.toPublicPath(asset.localPath, asset.type);
-        this.urlMap.set(asset.url, publicPath);
+      const localPath = asset.relativePath
+        ? `/assets/${asset.relativePath}`
+        : this.toPublicPath(asset.localPath || '', asset.type);
+
+      // Store full URL mapping
+      this.urlMap.set(asset.url, localPath);
+
+      // Also store pathname-only mapping for relative URL lookups
+      try {
+        const urlObj = new URL(asset.url);
+        this.pathMap.set(urlObj.pathname, localPath);
+        // Also store without query params
+        const cleanUrl = `${urlObj.origin}${urlObj.pathname}`;
+        this.urlMap.set(cleanUrl, localPath);
+      } catch {
+        // Not a valid URL, skip path mapping
       }
     }
   }
@@ -66,17 +78,57 @@ export class URLMapper {
    * Returns the original URL if no mapping exists
    */
   rewriteURL(url: string): string {
+    if (!url) return url;
+
     // Try exact match first
     if (this.urlMap.has(url)) {
       return this.urlMap.get(url)!;
     }
 
-    // Try without query parameters and hash
+    // If it's a relative URL, try different strategies
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      // Strategy 1: Try as pathname directly
+      const pathname = url.split('?')[0].split('#')[0]; // Remove query and hash
+      if (this.pathMap.has(pathname)) {
+        return this.pathMap.get(pathname)!;
+      }
+
+      // Strategy 2: If we have a base URL, resolve relative URL to absolute
+      if (this.baseUrl) {
+        try {
+          const absoluteUrl = new URL(url, this.baseUrl).href;
+          if (this.urlMap.has(absoluteUrl)) {
+            return this.urlMap.get(absoluteUrl)!;
+          }
+          // Try without query/hash
+          const absoluteUrlObj = new URL(absoluteUrl);
+          const cleanAbsoluteUrl = `${absoluteUrlObj.origin}${absoluteUrlObj.pathname}`;
+          if (this.urlMap.has(cleanAbsoluteUrl)) {
+            return this.urlMap.get(cleanAbsoluteUrl)!;
+          }
+          // Try pathname from absolute URL
+          if (this.pathMap.has(absoluteUrlObj.pathname)) {
+            return this.pathMap.get(absoluteUrlObj.pathname)!;
+          }
+        } catch {
+          // Failed to resolve, continue
+        }
+      }
+
+      // Return original relative URL if no mapping found
+      return url;
+    }
+
+    // It's an absolute URL - try without query parameters and hash
     try {
       const urlObj = new URL(url);
       const cleanUrl = `${urlObj.origin}${urlObj.pathname}`;
       if (this.urlMap.has(cleanUrl)) {
         return this.urlMap.get(cleanUrl)!;
+      }
+      // Try pathname only
+      if (this.pathMap.has(urlObj.pathname)) {
+        return this.pathMap.get(urlObj.pathname)!;
       }
     } catch {
       // Not a valid URL, return as-is

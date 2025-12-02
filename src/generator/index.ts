@@ -19,19 +19,23 @@ export interface GenerateProjectOptions {
   html: string;
   includeAssets?: boolean;
   extractedHTML?: ExtractedHTML;
+  baseUrl?: string; // Base URL for resolving relative asset URLs
 }
 
 /**
  * Main function to generate a complete Vite + React project
  */
 export async function generateProject(options: GenerateProjectOptions): Promise<void> {
-  const { outputDir, components, styles, animations, assets, html, includeAssets = true, extractedHTML } = options;
+  const { outputDir, components, styles, animations, assets, html, includeAssets = true, extractedHTML, baseUrl } = options;
 
   console.log('[Generator] Starting project generation...');
 
   // Create URL mapper for asset URL rewriting
-  const urlMapper = new URLMapper(assets);
+  const urlMapper = new URLMapper(assets, baseUrl);
   console.log('[Generator] Created URL mapper with', urlMapper.getStats().totalMappings, 'asset mappings');
+  if (baseUrl) {
+    console.log('[Generator] Base URL for relative path resolution:', baseUrl);
+  }
 
   // Create directory structure
   await createProjectStructure(outputDir);
