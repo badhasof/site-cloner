@@ -395,6 +395,13 @@ function convertStyleStringToJSX(styleString: string): string {
 function computedStylesToTailwind(styles: Record<string, string>): string[] {
   const classes: string[] = [];
 
+  // Get display and position values first - used for conditional checks
+  const display = styles.display || '';
+  const position = styles.position || 'static';
+  const isFlex = display === 'flex' || display === 'inline-flex';
+  const isGrid = display === 'grid' || display === 'inline-grid';
+  const isPositioned = position !== 'static';
+
   // 1. COLORS
   if (styles.color) {
     const colorClass = colorToTailwind(styles.color, 'text');
@@ -460,7 +467,7 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
   }
 
   // 3. DISPLAY
-  if (styles.display) {
+  if (display) {
     const displayMap: Record<string, string> = {
       'block': 'block',
       'inline-block': 'inline-block',
@@ -471,40 +478,41 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
       'inline-grid': 'inline-grid',
       'hidden': 'hidden'
     };
-    if (displayMap[styles.display]) {
-      classes.push(displayMap[styles.display]);
+    if (displayMap[display]) {
+      classes.push(displayMap[display]);
     }
   }
 
-  // 4. SIZING
+  // 4. SIZING - Only use percentage-based or named values, skip fixed pixel widths/heights
   if (styles.width) {
-    const widthClass = sizeToTailwind(styles.width, 'w');
+    const widthClass = sizeToTailwind(styles.width, 'w', true);
     if (widthClass) classes.push(widthClass);
   }
 
   if (styles.height) {
-    const heightClass = sizeToTailwind(styles.height, 'h');
+    const heightClass = sizeToTailwind(styles.height, 'h', true);
     if (heightClass) classes.push(heightClass);
   }
 
   if (styles.maxWidth) {
-    const maxWidthClass = sizeToTailwind(styles.maxWidth, 'max-w');
+    const maxWidthClass = sizeToTailwind(styles.maxWidth, 'max-w', false);
     if (maxWidthClass) classes.push(maxWidthClass);
   }
 
   if (styles.maxHeight) {
-    const maxHeightClass = sizeToTailwind(styles.maxHeight, 'max-h');
+    const maxHeightClass = sizeToTailwind(styles.maxHeight, 'max-h', false);
     if (maxHeightClass) classes.push(maxHeightClass);
   }
 
-  if (styles.minWidth) {
-    const minWidthClass = sizeToTailwind(styles.minWidth, 'min-w');
-    if (minWidthClass) classes.push(minWidthClass);
+  // Skip min-w-auto, min-h-auto, and min-w-0, min-h-0 (all are defaults/noise)
+  if (styles.minWidth && styles.minWidth !== 'auto' && styles.minWidth !== '0px' && styles.minWidth !== '0') {
+    const minWidthClass = sizeToTailwind(styles.minWidth, 'min-w', false);
+    if (minWidthClass && minWidthClass !== 'min-w-0') classes.push(minWidthClass);
   }
 
-  if (styles.minHeight) {
-    const minHeightClass = sizeToTailwind(styles.minHeight, 'min-h');
-    if (minHeightClass) classes.push(minHeightClass);
+  if (styles.minHeight && styles.minHeight !== 'auto' && styles.minHeight !== '0px' && styles.minHeight !== '0') {
+    const minHeightClass = sizeToTailwind(styles.minHeight, 'min-h', false);
+    if (minHeightClass && minHeightClass !== 'min-h-0') classes.push(minHeightClass);
   }
 
   // 5. SPACING - Margin
@@ -557,28 +565,33 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
     }
   }
 
-  if (styles.gap) {
+  // Gap - only for flex/grid containers
+  if ((isFlex || isGrid) && styles.gap) {
     const gapClass = spacingToTailwind(styles.gap, 'gap');
     if (gapClass) classes.push(gapClass);
   }
 
-  // 6. BORDERS
-  if (styles.borderWidth) {
+  // 6. BORDERS - Only add border classes if there's an actual border
+  const hasBorder = styles.borderWidth && parseFloat(styles.borderWidth) > 0;
+
+  if (hasBorder && styles.borderWidth) {
     const borderClass = borderWidthToTailwind(styles.borderWidth);
     if (borderClass) classes.push(borderClass);
   }
 
-  if (styles.borderColor) {
+  if (hasBorder && styles.borderColor) {
     const borderColorClass = colorToTailwind(styles.borderColor, 'border');
     if (borderColorClass) classes.push(borderColorClass);
   }
 
-  if (styles.borderRadius) {
+  // Skip rounded-none (default)
+  if (styles.borderRadius && parseFloat(styles.borderRadius) > 0) {
     const radiusClass = borderRadiusToTailwind(styles.borderRadius);
-    if (radiusClass) classes.push(radiusClass);
+    if (radiusClass && radiusClass !== 'rounded-none') classes.push(radiusClass);
   }
 
-  if (styles.borderStyle && styles.borderStyle !== 'none') {
+  // Only add border-solid if there's an actual border
+  if (hasBorder && styles.borderStyle && styles.borderStyle !== 'none') {
     const styleMap: Record<string, string> = {
       'solid': 'border-solid',
       'dashed': 'border-dashed',
@@ -596,114 +609,138 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
     if (shadowClass) classes.push(shadowClass);
   }
 
-  // 8. FLEXBOX
-  if (styles.flexDirection) {
-    const directionMap: Record<string, string> = {
-      'row': 'flex-row',
-      'row-reverse': 'flex-row-reverse',
-      'column': 'flex-col',
-      'column-reverse': 'flex-col-reverse'
-    };
-    if (directionMap[styles.flexDirection]) {
-      classes.push(directionMap[styles.flexDirection]);
+  // 8. FLEXBOX - Only add flex properties when display is flex/inline-flex
+  if (isFlex) {
+    // Skip flex-row (default)
+    if (styles.flexDirection && styles.flexDirection !== 'row') {
+      const directionMap: Record<string, string> = {
+        'row-reverse': 'flex-row-reverse',
+        'column': 'flex-col',
+        'column-reverse': 'flex-col-reverse'
+      };
+      if (directionMap[styles.flexDirection]) {
+        classes.push(directionMap[styles.flexDirection]);
+      }
+    }
+
+    if (styles.justifyContent) {
+      const justifyMap: Record<string, string> = {
+        'flex-start': 'justify-start',
+        'flex-end': 'justify-end',
+        'center': 'justify-center',
+        'space-between': 'justify-between',
+        'space-around': 'justify-around',
+        'space-evenly': 'justify-evenly'
+      };
+      if (justifyMap[styles.justifyContent]) {
+        classes.push(justifyMap[styles.justifyContent]);
+      }
+    }
+
+    if (styles.alignItems) {
+      const alignMap: Record<string, string> = {
+        'flex-start': 'items-start',
+        'flex-end': 'items-end',
+        'center': 'items-center',
+        'baseline': 'items-baseline',
+        'stretch': 'items-stretch'
+      };
+      if (alignMap[styles.alignItems]) {
+        classes.push(alignMap[styles.alignItems]);
+      }
+    }
+
+    // Skip flex-nowrap (default)
+    if (styles.flexWrap && styles.flexWrap !== 'nowrap') {
+      const wrapMap: Record<string, string> = {
+        'wrap': 'flex-wrap',
+        'wrap-reverse': 'flex-wrap-reverse'
+      };
+      if (wrapMap[styles.flexWrap]) {
+        classes.push(wrapMap[styles.flexWrap]);
+      }
+    }
+
+    if (styles.flexGrow) {
+      const grow = parseInt(styles.flexGrow);
+      // Only add if grow is 1 (skip flex-grow-0, it's default)
+      if (grow === 1) classes.push('flex-grow');
+    }
+
+    if (styles.flexShrink) {
+      const shrink = parseInt(styles.flexShrink);
+      // Only add flex-shrink-0 if explicitly 0 (1 is default)
+      if (shrink === 0) classes.push('flex-shrink-0');
     }
   }
 
-  if (styles.justifyContent) {
-    const justifyMap: Record<string, string> = {
-      'flex-start': 'justify-start',
-      'flex-end': 'justify-end',
-      'center': 'justify-center',
-      'space-between': 'justify-between',
-      'space-around': 'justify-around',
-      'space-evenly': 'justify-evenly'
-    };
-    if (justifyMap[styles.justifyContent]) {
-      classes.push(justifyMap[styles.justifyContent]);
+  // 9. GRID - Only add grid properties when display is grid/inline-grid
+  if (isGrid) {
+    if (styles.gridTemplateColumns) {
+      const gridColsClass = gridTemplateToTailwind(styles.gridTemplateColumns, 'grid-cols');
+      if (gridColsClass) classes.push(gridColsClass);
     }
-  }
 
-  if (styles.alignItems) {
-    const alignMap: Record<string, string> = {
-      'flex-start': 'items-start',
-      'flex-end': 'items-end',
-      'center': 'items-center',
-      'baseline': 'items-baseline',
-      'stretch': 'items-stretch'
-    };
-    if (alignMap[styles.alignItems]) {
-      classes.push(alignMap[styles.alignItems]);
+    if (styles.gridTemplateRows) {
+      const gridRowsClass = gridTemplateToTailwind(styles.gridTemplateRows, 'grid-rows');
+      if (gridRowsClass) classes.push(gridRowsClass);
     }
-  }
-
-  if (styles.flexWrap) {
-    const wrapMap: Record<string, string> = {
-      'wrap': 'flex-wrap',
-      'wrap-reverse': 'flex-wrap-reverse',
-      'nowrap': 'flex-nowrap'
-    };
-    if (wrapMap[styles.flexWrap]) {
-      classes.push(wrapMap[styles.flexWrap]);
-    }
-  }
-
-  if (styles.flexGrow) {
-    const grow = parseInt(styles.flexGrow);
-    if (grow === 1) classes.push('flex-grow');
-    else if (grow === 0) classes.push('flex-grow-0');
-  }
-
-  if (styles.flexShrink) {
-    const shrink = parseInt(styles.flexShrink);
-    if (shrink === 1) classes.push('flex-shrink');
-    else if (shrink === 0) classes.push('flex-shrink-0');
-  }
-
-  // 9. GRID
-  if (styles.gridTemplateColumns) {
-    const gridColsClass = gridTemplateToTailwind(styles.gridTemplateColumns, 'grid-cols');
-    if (gridColsClass) classes.push(gridColsClass);
-  }
-
-  if (styles.gridTemplateRows) {
-    const gridRowsClass = gridTemplateToTailwind(styles.gridTemplateRows, 'grid-rows');
-    if (gridRowsClass) classes.push(gridRowsClass);
   }
 
   // 10. POSITIONING
-  if (styles.position) {
+  // Skip static (default)
+  if (position && position !== 'static') {
     const positionMap: Record<string, string> = {
-      'static': 'static',
       'relative': 'relative',
       'absolute': 'absolute',
       'fixed': 'fixed',
       'sticky': 'sticky'
     };
-    if (positionMap[styles.position]) {
-      classes.push(positionMap[styles.position]);
+    if (positionMap[position]) {
+      classes.push(positionMap[position]);
     }
   }
 
-  if (styles.top) {
-    const topClass = positionOffsetToTailwind(styles.top, 'top');
-    if (topClass) classes.push(topClass);
-  }
-  if (styles.right) {
-    const rightClass = positionOffsetToTailwind(styles.right, 'right');
-    if (rightClass) classes.push(rightClass);
-  }
-  if (styles.bottom) {
-    const bottomClass = positionOffsetToTailwind(styles.bottom, 'bottom');
-    if (bottomClass) classes.push(bottomClass);
-  }
-  if (styles.left) {
-    const leftClass = positionOffsetToTailwind(styles.left, 'left');
-    if (leftClass) classes.push(leftClass);
+  // Only add position offsets for absolute, fixed, sticky - NOT relative
+  // For relative positioning, offsets of 0 are visually meaningless
+  const shouldAddOffsets = position && ['absolute', 'fixed', 'sticky'].includes(position);
+
+  if (shouldAddOffsets) {
+    // Check if all four offsets are 0 - use inset-0 instead
+    const top = styles.top;
+    const right = styles.right;
+    const bottom = styles.bottom;
+    const left = styles.left;
+
+    const isZero = (val: string | undefined) => val === '0px' || val === '0' || val === '0%';
+
+    if (isZero(top) && isZero(right) && isZero(bottom) && isZero(left)) {
+      classes.push('inset-0');
+    } else {
+      // Add individual offsets, skip auto and 0 (0 is often default)
+      if (top && top !== 'auto' && !isZero(top)) {
+        const topClass = positionOffsetToTailwind(top, 'top');
+        if (topClass) classes.push(topClass);
+      }
+      if (right && right !== 'auto' && !isZero(right)) {
+        const rightClass = positionOffsetToTailwind(right, 'right');
+        if (rightClass) classes.push(rightClass);
+      }
+      if (bottom && bottom !== 'auto' && !isZero(bottom)) {
+        const bottomClass = positionOffsetToTailwind(bottom, 'bottom');
+        if (bottomClass) classes.push(bottomClass);
+      }
+      if (left && left !== 'auto' && !isZero(left)) {
+        const leftClass = positionOffsetToTailwind(left, 'left');
+        if (leftClass) classes.push(leftClass);
+      }
+    }
   }
 
-  if (styles.zIndex) {
+  // Skip z-[auto]
+  if (styles.zIndex && styles.zIndex !== 'auto') {
     const zClass = zIndexToTailwind(styles.zIndex);
-    if (zClass) classes.push(zClass);
+    if (zClass && zClass !== 'z-auto') classes.push(zClass);
   }
 
   // 11. OPACITY
@@ -712,12 +749,11 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
     if (opacityClass) classes.push(opacityClass);
   }
 
-  // 12. OVERFLOW
-  if (styles.overflow) {
+  // 12. OVERFLOW - Skip visible (default)
+  if (styles.overflow && styles.overflow !== 'visible') {
     const overflowMap: Record<string, string> = {
       'auto': 'overflow-auto',
       'hidden': 'overflow-hidden',
-      'visible': 'overflow-visible',
       'scroll': 'overflow-scroll'
     };
     if (overflowMap[styles.overflow]) {
@@ -725,11 +761,10 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
     }
   }
 
-  if (styles.overflowX) {
+  if (styles.overflowX && styles.overflowX !== 'visible') {
     const overflowXMap: Record<string, string> = {
       'auto': 'overflow-x-auto',
       'hidden': 'overflow-x-hidden',
-      'visible': 'overflow-x-visible',
       'scroll': 'overflow-x-scroll'
     };
     if (overflowXMap[styles.overflowX]) {
@@ -737,11 +772,10 @@ function computedStylesToTailwind(styles: Record<string, string>): string[] {
     }
   }
 
-  if (styles.overflowY) {
+  if (styles.overflowY && styles.overflowY !== 'visible') {
     const overflowYMap: Record<string, string> = {
       'auto': 'overflow-y-auto',
       'hidden': 'overflow-y-hidden',
-      'visible': 'overflow-y-visible',
       'scroll': 'overflow-y-scroll'
     };
     if (overflowYMap[styles.overflowY]) {
@@ -843,8 +877,8 @@ function letterSpacingToTailwind(letterSpacing: string): string | null {
   return `tracking-[${letterSpacing}]`;
 }
 
-function sizeToTailwind(size: string, prefix: string): string | null {
-  if (!size || size === 'auto') return `${prefix}-auto`;
+function sizeToTailwind(size: string, prefix: string, skipLargePixels: boolean = false): string | null {
+  if (!size || size === 'auto') return null; // Don't generate w-auto or h-auto
 
   if (size.includes('%')) {
     const percent = parseFloat(size);
@@ -861,6 +895,12 @@ function sizeToTailwind(size: string, prefix: string): string | null {
     const px = parseFloat(size);
     if (px === 0) return `${prefix}-0`;
     if (px === 1) return `${prefix}-px`;
+
+    // For width/height, skip large pixel values to maintain responsive design
+    if (skipLargePixels && px > 384) {
+      return null;
+    }
+
     const scale = Math.round(px / 4);
     if (scale >= 0 && scale <= 96) return `${prefix}-${scale}`;
     if (prefix === 'max-w') {
@@ -912,7 +952,7 @@ function spacingToTailwind(spacing: string, prefix: string): string | null {
 
 function borderWidthToTailwind(borderWidth: string): string | null {
   const width = parseFloat(borderWidth);
-  if (width === 0) return 'border-0';
+  if (width === 0) return null; // Don't generate border-0
   if (width === 1) return 'border';
   if (width === 2) return 'border-2';
   if (width === 4) return 'border-4';
@@ -922,7 +962,7 @@ function borderWidthToTailwind(borderWidth: string): string | null {
 
 function borderRadiusToTailwind(borderRadius: string): string | null {
   const radius = parseFloat(borderRadius);
-  if (radius === 0) return 'rounded-none';
+  if (radius === 0) return null; // Don't generate rounded-none (it's the default)
   if (radius <= 2) return 'rounded-sm';
   if (radius <= 4) return 'rounded';
   if (radius <= 6) return 'rounded-md';
@@ -960,7 +1000,7 @@ function gridTemplateToTailwind(gridTemplate: string, prefix: string): string | 
 }
 
 function positionOffsetToTailwind(offset: string, prefix: string): string | null {
-  if (!offset || offset === 'auto') return `${prefix}-auto`;
+  if (!offset || offset === 'auto') return null; // Don't generate top-auto, right-auto, etc.
   if (offset === '0px' || offset === '0') return `${prefix}-0`;
 
   if (offset.includes('%')) {
@@ -981,7 +1021,9 @@ function positionOffsetToTailwind(offset: string, prefix: string): string | null
 }
 
 function zIndexToTailwind(zIndex: string): string | null {
+  if (zIndex === 'auto') return null; // Don't generate z-auto
   const z = parseInt(zIndex);
+  if (isNaN(z)) return null;
   if (z === 0) return 'z-0';
   if (z === 10) return 'z-10';
   if (z === 20) return 'z-20';
@@ -989,7 +1031,7 @@ function zIndexToTailwind(zIndex: string): string | null {
   if (z === 40) return 'z-40';
   if (z === 50) return 'z-50';
   if (z === 999 || z === 1000) return 'z-50';
-  if (z < 0) return 'z-auto';
+  if (z < 0) return null; // Negative z-index is unusual, skip it
   return `z-[${zIndex}]`;
 }
 
