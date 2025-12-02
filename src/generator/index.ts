@@ -228,16 +228,22 @@ async function writeAppComponent(
     .map(c => `import { ${c.name} } from './components/${c.name}';`)
     .join('\n');
 
-  const componentUsage = components
-    .filter(c => c.isExported)
-    .map(c => `      <${c.name} />`)
-    .join('\n');
+  const exportedComponents = components.filter(c => c.isExported);
 
   let content: string;
 
-  if (componentUsage) {
+  if (exportedComponents.length > 0) {
     // If we have React components, use them
-    content = componentUsage;
+    if (exportedComponents.length === 1) {
+      // Single component - use directly
+      content = `      <${exportedComponents[0].name} />`;
+    } else {
+      // Multiple components - wrap in Fragment
+      const componentUsage = exportedComponents
+        .map(c => `        <${c.name} />`)
+        .join('\n');
+      content = `      <>\n${componentUsage}\n      </>`;
+    }
   } else if (extractedHTML) {
     // Otherwise, use the extracted HTML content
     console.log('[Generator] No React components found, using extracted HTML content');
@@ -324,14 +330,17 @@ ${Object.entries(styles.cssVariables || {})
 }
 
 async function writeAnimationUtilities(outputDir: string, animations: AnimationResult): Promise<void> {
-  const code = `/**
- * Animation utilities generated from captured animations
- */
+  const hasAnimations = animations.framerMotionCode && animations.framerMotionCode.trim().length > 0;
 
-${animations.framerMotionCode || ''}
-`;
+  const code = hasAnimations
+    ? `import { motion } from 'framer-motion';\n\n${animations.framerMotionCode}`
+    : `// Animation utilities - placeholder\nexport const animations = {};`;
 
-  await fs.writeFile(path.join(outputDir, 'src', 'utils', 'animations.ts'), code, 'utf-8');
+  await fs.writeFile(
+    path.join(outputDir, 'src', 'utils', 'animations.tsx'),
+    code,
+    'utf-8'
+  );
 }
 
 async function copyAssets(outputDir: string, assets: Asset[]): Promise<void> {

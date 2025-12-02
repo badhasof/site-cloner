@@ -158,6 +158,28 @@ function ensureImports(code: string, component: DetectedComponent): string {
   return code;
 }
 
+function mergeClassName(code: string, selector: string, newClasses: string): string {
+  // Pattern to match element with existing className
+  const withClassRegex = new RegExp(
+    `(<${selector}[^>]*className=")([^"]*)(")`,
+    'g'
+  );
+
+  // Check if element already has className - need to reset regex
+  const testRegex = new RegExp(`(<${selector}[^>]*className=")([^"]*)(")`, 'g');
+  if (testRegex.test(code)) {
+    // Merge: append new classes to existing
+    return code.replace(withClassRegex, (match, prefix, existing, suffix) => {
+      const merged = [...new Set([...existing.split(' ').filter(c => c), ...newClasses.split(' ').filter(c => c)])].join(' ');
+      return `${prefix}${merged}${suffix}`;
+    });
+  }
+
+  // No existing className - add it
+  const withoutClassRegex = new RegExp(`(<${selector})(\\s|>)`, 'g');
+  return code.replace(withoutClassRegex, `$1 className="${newClasses}"$2`);
+}
+
 function applyTailwindClasses(
   code: string,
   componentName: string,
@@ -175,11 +197,8 @@ function applyTailwindClasses(
 
     // Look for common patterns and inject classes
       if (selector.includes(componentName.toLowerCase())) {
-        // Try to add classes to the root element
-        code = code.replace(
-          /(<div)(\s|>)/,
-          `$1 className="${classString}"$2`
-        );
+        // Use mergeClassName to avoid duplicate className attributes
+        code = mergeClassName(code, 'div', classString);
       }
     }
   }

@@ -4,6 +4,13 @@
 
 import { Page } from 'playwright';
 
+const SKIP_ELEMENTS = new Set([
+  'next-route-announcer',
+  'next-error',
+  'portal',
+  'slot',
+]);
+
 export interface ExtractedElement {
   tagName: string;
   textContent: string;
@@ -42,110 +49,86 @@ export async function extractHTMLContent(page: Page): Promise<ExtractedHTML> {
 
 /**
  * Extract structured content from the page with hierarchy
+ * Note: Uses string evaluation to avoid tsx/esbuild __name helper issues
  */
 async function extractStructuredContent(page: Page): Promise<ExtractedElement> {
-  return await page.evaluate(() => {
-    function extractElement(element: Element): any {
-      // Skip script, style, noscript elements
-      if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(element.tagName)) {
-        return null;
-      }
-
-      const styles = window.getComputedStyle(element);
-
-      // Skip hidden elements
-      if (styles.display === 'none' || styles.visibility === 'hidden') {
-        return null;
-      }
-
-      // Extract relevant computed styles
-      const computedStyles: Record<string, string> = {};
-      const relevantProps = [
-        'display',
-        'position',
-        'width',
-        'height',
-        'margin',
-        'padding',
-        'color',
-        'backgroundColor',
-        'fontSize',
-        'fontWeight',
-        'fontFamily',
-        'lineHeight',
-        'textAlign',
-        'textDecoration',
-        'border',
-        'borderRadius',
-        'boxShadow'
-      ];
-
-      for (const prop of relevantProps) {
-        const value = styles.getPropertyValue(prop) || (styles as any)[prop];
-        if (value && value !== 'none' && value !== 'normal') {
-          computedStyles[prop] = value;
+  const extractScript = `
+    (function() {
+      function extractElement(element) {
+        if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(element.tagName)) {
+          return null;
         }
-      }
 
-      // Extract attributes
-      const attributes: Record<string, string> = {};
-      for (let i = 0; i < element.attributes.length; i++) {
-        const attr = element.attributes[i];
-        // Skip internal attributes
-        if (!attr.name.startsWith('data-playwright-')) {
-          attributes[attr.name] = attr.value;
+        var styles = window.getComputedStyle(element);
+
+        if (styles.display === 'none' || styles.visibility === 'hidden') {
+          return null;
         }
-      }
 
-      // Get text content (only direct text, not from children)
-      let textContent = '';
-      for (const node of Array.from(element.childNodes)) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent?.trim() || '';
-          if (text) {
-            textContent += text + ' ';
+        var computedStyles = {};
+        var relevantProps = [
+          'display', 'position', 'width', 'height', 'margin', 'padding',
+          'color', 'backgroundColor', 'fontSize', 'fontWeight', 'fontFamily',
+          'lineHeight', 'textAlign', 'textDecoration', 'border', 'borderRadius', 'boxShadow'
+        ];
+
+        for (var i = 0; i < relevantProps.length; i++) {
+          var prop = relevantProps[i];
+          var value = styles.getPropertyValue(prop) || styles[prop];
+          if (value && value !== 'none' && value !== 'normal') {
+            computedStyles[prop] = value;
           }
         }
-      }
-      textContent = textContent.trim();
 
-      // Recursively extract children
-      const children: any[] = [];
-      for (const child of Array.from(element.children)) {
-        const extracted = extractElement(child);
-        if (extracted) {
-          children.push(extracted);
+        var attributes = {};
+        for (var j = 0; j < element.attributes.length; j++) {
+          var attr = element.attributes[j];
+          if (!attr.name.startsWith('data-playwright-')) {
+            attributes[attr.name] = attr.value;
+          }
         }
+
+        var textContent = '';
+        var childNodes = element.childNodes;
+        for (var k = 0; k < childNodes.length; k++) {
+          var node = childNodes[k];
+          if (node.nodeType === Node.TEXT_NODE) {
+            var text = (node.textContent || '').trim();
+            if (text) {
+              textContent += text + ' ';
+            }
+          }
+        }
+        textContent = textContent.trim();
+
+        var children = [];
+        var elementChildren = element.children;
+        for (var m = 0; m < elementChildren.length; m++) {
+          var extracted = extractElement(elementChildren[m]);
+          if (extracted) {
+            children.push(extracted);
+          }
+        }
+
+        return {
+          tagName: element.tagName.toLowerCase(),
+          textContent: textContent,
+          attributes: attributes,
+          computedStyles: computedStyles,
+          children: children
+        };
       }
 
-      return {
-        tagName: element.tagName.toLowerCase(),
-        textContent,
-        attributes,
-        computedStyles,
-        children
-      };
-    }
+      var body = document.body;
+      if (!body) {
+        return { tagName: 'div', textContent: '', attributes: {}, computedStyles: {}, children: [] };
+      }
 
-    const body = document.body;
-    if (!body) {
-      return {
-        tagName: 'div',
-        textContent: '',
-        attributes: {},
-        computedStyles: {},
-        children: []
-      };
-    }
+      return extractElement(body) || { tagName: 'div', textContent: '', attributes: {}, computedStyles: {}, children: [] };
+    })()
+  `;
 
-    return extractElement(body) || {
-      tagName: 'div',
-      textContent: '',
-      attributes: {},
-      computedStyles: {},
-      children: []
-    };
-  });
+  return await page.evaluate(extractScript);
 }
 
 /**
@@ -241,7 +224,22 @@ async function extractComputedStylesMap(page: Page): Promise<Map<string, Record<
  */
 export function elementToJSX(element: ExtractedElement, indent: number = 0): string {
   const indentStr = '  '.repeat(indent);
-  const { tagName, textContent, attributes, computedStyles, children } = element;
+  let { tagName, textContent, attributes, computedStyles, children } = element;
+
+  // Skip known problematic elements entirely - render children only
+  if (SKIP_ELEMENTS.has(tagName)) {
+    // Return children JSX only, skip the wrapper element
+    const childrenJsx = children
+      .map(child => elementToJSX(child, indent))
+      .filter(c => c)
+      .join('\n');
+    return childrenJsx;
+  }
+
+  // Convert custom elements (with hyphens) to div
+  if (tagName.includes('-')) {
+    tagName = 'div';
+  }
 
   // Special handling for body tag - return only its children
   if (tagName === 'body') {
@@ -251,8 +249,9 @@ export function elementToJSX(element: ExtractedElement, indent: number = 0): str
     if (children.length === 1) {
       return elementToJSX(children[0], indent);
     }
-    // Multiple children - wrap in fragment or first div
-    return children.map(child => elementToJSX(child, indent)).join('\n');
+    // Multiple children - wrap in a Fragment to avoid JSX error
+    const childrenJsx = children.map(child => elementToJSX(child, indent + 1)).join('\n');
+    return `${indentStr}<>\n${childrenJsx}\n${indentStr}</>`;
   }
 
   // Build attributes string
@@ -261,14 +260,21 @@ export function elementToJSX(element: ExtractedElement, indent: number = 0): str
   // Collect Tailwind classes from computed styles
   const tailwindClasses = computedStylesToTailwind(computedStyles);
 
+  // Track if we've already added className to avoid duplicates
+  let classNameAdded = false;
+
   // Convert class to className and merge with Tailwind classes
   for (const [key, value] of Object.entries(attributes)) {
-    if (key === 'class') {
+    if (key === 'class' || key === 'className') {
+      // Skip if we've already processed className
+      if (classNameAdded) continue;
+
       // Merge existing classes with generated Tailwind classes
       const existingClasses = value.split(' ').filter(c => c.trim());
       const allClasses = [...new Set([...existingClasses, ...tailwindClasses])];
       if (allClasses.length > 0) {
         attrs.push(`className="${allClasses.join(' ')}"`);
+        classNameAdded = true;
       }
     } else if (key === 'style') {
       // Skip inline styles, we'll use computed styles
@@ -280,7 +286,7 @@ export function elementToJSX(element: ExtractedElement, indent: number = 0): str
   }
 
   // If no class attribute but we have Tailwind classes, add them
-  if (!attributes.class && tailwindClasses.length > 0) {
+  if (!classNameAdded && tailwindClasses.length > 0) {
     attrs.push(`className="${tailwindClasses.join(' ')}"`);
   }
 
